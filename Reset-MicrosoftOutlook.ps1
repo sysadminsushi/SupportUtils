@@ -1,50 +1,47 @@
 <#
 .SYNOPSIS
-    Performs a full hard reset of Microsoft Outlook (Classic and New).
+    Performs a hard reset of classic Outlook and New Outlook (Olk).
 
 .DESCRIPTION
-    Closes all Outlook processes, removes cached data from multiple locations,
-    deletes and recreates the Outlook profile registry key, and restores Outlook
-    to a factory‑state launch condition.
+    Stops Outlook.exe and olk.exe, clears classic and New Outlook cache,
+    and removes Office 16.0 Outlook profiles under HKCU so the next
+    launch is a new profile. Signatures are left in place.
 
-.AUTHOR
-    sysadminsushi
-
-.VERSION
-    2.22.2026
+.NOTES
+    Author:  sysadminsushi
+    Version: 9.29.2026
 #>
-
-# Performs a complete hard reset of Microsoft Outlook by clearing cached data and rebuilding the profile registry key.
 function Reset-MicrosoftOutlook {
+    Get-Process -Name Outlook, olk -ErrorAction SilentlyContinue |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
 
-    # Terminate all Microsoft Outlook processes, including New Outlook (Olk)
-    Stop-Process -Name "Outlook", "olk" -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
-
-    # Remove Local AppData Outlook cache
-    try {
-        Remove-Item -Path "$env:LocalAppData\Microsoft\Outlook\*" -Recurse -Force -ErrorAction SilentlyContinue
-    } catch {}
-
-    # Remove Roaming AppData Outlook settings and signatures
-    try {
-        Remove-Item -Path "$env:AppData\Microsoft\Outlook\*" -Recurse -Force -ErrorAction SilentlyContinue
-    } catch {}
-
-    # Remove New Outlook (Olk) data
-    try {
-        Remove-Item -Path "$env:LocalAppData\Microsoft\Olk\*" -Recurse -Force -ErrorAction SilentlyContinue
-    } catch {}
-
-    # Delete and recreate the Outlook profile registry key
-    $outlookProfileRegistryPath = "HKCU:\Software\Microsoft\Office\16.0\Outlook\Profiles\Outlook"
-
-    if (Test-Path $outlookProfileRegistryPath) {
-        Remove-Item -Path $outlookProfileRegistryPath -Recurse -Force -ErrorAction SilentlyContinue
+    $cachePaths = @(
+        (Join-Path $env:LOCALAPPDATA "Microsoft\Outlook"),
+        (Join-Path $env:LOCALAPPDATA "Microsoft\Olk")
+    )
+    foreach ($cachePath in $cachePaths) {
+        if (Test-Path $cachePath) {
+            Remove-Item -Path (Join-Path $cachePath "*") -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Output "Cleared: $cachePath"
+        }
     }
 
-    New-Item -Path $outlookProfileRegistryPath -Force | Out-Null
+    $roamingOutlookPath = Join-Path $env:APPDATA "Microsoft\Outlook"
+    if (Test-Path $roamingOutlookPath) {
+        Get-ChildItem $roamingOutlookPath -Force |
+            Where-Object { $_.Name -ne "Signatures" } |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Output "Cleared roaming Outlook data (Signatures kept): $roamingOutlookPath"
+    }
+
+    $profilesRootPath = "HKCU:\Software\Microsoft\Office\16.0\Outlook\Profiles"
+    if (Test-Path $profilesRootPath) {
+        Remove-Item -Path $profilesRootPath -Recurse -Force
+        Write-Output "Removed: $profilesRootPath"
+    }
+    New-Item -Path $profilesRootPath -Force | Out-Null
+    Write-Output "Recreated empty Profiles key."
 }
 
-# Executes the Outlook hard reset process
 Reset-MicrosoftOutlook
